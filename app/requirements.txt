@@ -1,0 +1,10 @@
+uvicorn
+fastapi
+uvicorn==0.30.1
+
+SQLAlchemy==2.0.31
+
+# LLM / HuggingFace
+transformers
+torch
+sentencepiece  # для моделей вроде T5 или mBART
