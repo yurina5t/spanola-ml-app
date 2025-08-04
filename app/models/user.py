@@ -1,33 +1,53 @@
+from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional, List, TYPE_CHECKING
+from datetime import datetime, timezone
 import re
 from hashlib import sha256
-from dataclasses import dataclass, field
-from typing import List
-from .logs import TaskLog
-from .wallet import Wallet
+
+if TYPE_CHECKING:
+    from models.task_log import TaskLog
+    from models.transaction_log import TransactionLog
+    from models.wallet import Wallet
 
 
-@dataclass
-class User:
-    id: int
-    email: str
-    _password: str
-    wallet: Wallet = field(init=False)
-    completed_tasks: List[TaskLog] = field(default_factory=list)
+class User(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(..., unique=True, index=True, min_length=5, max_length=255)
+    password: str= Field(..., min_length=8)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_admin: bool = Field(default=False)
+    wallet: Optional["Wallet"] = Relationship(back_populates="user")
 
-    def __post_init__(self):
-        self._validate_email()
-        self._validate_password()
-        self._password = sha256(self._password.encode()).hexdigest()
-        self.wallet = Wallet(user_id=self.id)
+    completed_tasks: List["TaskLog"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    transactions: List["TransactionLog"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+    def set_password(self, raw_password: str):
+        self._validate_password(raw_password)
+        self.password = sha256(raw_password.encode()).hexdigest()
+
+    def check_password(self, raw_password: str) -> bool:
+        return sha256(raw_password.encode()).hexdigest() == self.password
 
     def _validate_email(self):
         pattern = re.compile(r'^[\w\.-]+@[\w\.-]+\.\w+$')
         if not pattern.match(self.email):
             raise ValueError("Неверный формат email")
+        return True
 
-    def _validate_password(self):
-        if len(self._password) < 8:
+    def _validate_password(self, raw_password: str):
+        if len(raw_password) < 8:
             raise ValueError("Пароль должен содержать не менее 8 символов")
 
-    def log_task(self, log: TaskLog):
-        self.completed_tasks.append(log)
+    def __str__(self):
+        return f"User(id={self.id}, email={self.email})"
+
+    class Config:
+        validate_assignment = True
+        arbitrary_types_allowed = True

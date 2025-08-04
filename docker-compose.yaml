@@ -16,7 +16,7 @@ services:
       rabbitmq:
         condition: service_started
       database:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -46,7 +46,7 @@ services:
       - "5672:5672"
       - "15672:15672"
     volumes:
-      - ./rabbitmq/data:/var/lib/rabbitmq
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - spanola-network
 
@@ -55,17 +55,26 @@ services:
     container_name: spanola-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: spanola
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}  
     ports:
       - "5432:5432"
     volumes:
-      - ./database/data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
       - spanola-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   spanola-network:
     name: spanola-network
     driver: bridge
+
+volumes:
+  rabbitmq_data:
+  postgres_data:
