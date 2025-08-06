@@ -1,5 +1,7 @@
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON
+from sqlalchemy import Enum as SqlEnum
+from enum import Enum
 from typing import Optional, TYPE_CHECKING, List
 from datetime import datetime, timezone
 
@@ -8,6 +10,10 @@ if TYPE_CHECKING:
     from models.user import User
     from models.theme import Theme 
 
+class DifficultyEnum(str, Enum):
+    easy = "easy"
+    medium = "medium"
+    hard = "hard"
 
 class TaskResult(SQLModel, table=True):
     """
@@ -16,10 +22,13 @@ class TaskResult(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     task_log_id: int = Field(foreign_key="tasklog.id", unique=True)
 
-    difficulty: str  # "easy", "medium", "hard"
+    difficulty: DifficultyEnum = Field(
+        sa_type=SqlEnum(DifficultyEnum), 
+        default=DifficultyEnum.medium
+        )
     vocabulary: List[str] = Field(default_factory=list, sa_column=Column(JSON)) 
     explanation: str
-    is_correct: bool = True
+    is_correct: bool = Field(default=True)
 
     task_log: Optional["TaskLog"] = Relationship(back_populates="result")
 

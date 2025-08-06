@@ -8,7 +8,8 @@ psycopg-binary
 alembic
 pydantic
 pydantic-settings
-sqlmodel
+sqlmodel>=0.0.8
+bcrypt>=4.0.1
 starlette
 # LLM / HuggingFace
 transformers

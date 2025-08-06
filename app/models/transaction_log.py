@@ -1,9 +1,15 @@
 from sqlmodel import SQLModel, Field, Relationship
+from sqlalchemy import Enum as SqlEnum
+from enum import Enum
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 
 if TYPE_CHECKING:
     from models.user import User
+
+class OperationType(str, Enum):
+    credit = "credit"
+    debit = "debit"
 
 class TransactionLog(SQLModel, table=True):
     """
@@ -12,7 +18,7 @@ class TransactionLog(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
     amount: float
-    operation: str  # 'credit' или 'debit'
+    operation: OperationType = Field(sa_type=SqlEnum(OperationType))
     reason: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

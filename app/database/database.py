@@ -31,16 +31,7 @@ def get_session():
 def init_db(drop_all: bool = False) -> None:
     try:
         if drop_all:
-                for model in [
-                     TaskResult, 
-                     PredictionLog, 
-                     TransactionLog, 
-                     TaskLog, 
-                     Wallet,  
-                     User, 
-                     Theme
-                ]:
-                    model.__table__.drop(engine, checkfirst=True)
+             SQLModel.metadata.drop_all(engine)
         SQLModel.metadata.create_all(engine)
     except Exception as e:
         print(f"[init_db] Ошибка при инициализации БД: {e}")

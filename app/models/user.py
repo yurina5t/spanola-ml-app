@@ -3,10 +3,12 @@ from typing import Optional, List, TYPE_CHECKING
 from datetime import datetime, timezone
 import re
 from hashlib import sha256
+import bcrypt
 
 if TYPE_CHECKING:
     from models.task_log import TaskLog
     from models.transaction_log import TransactionLog
+    from models.prediction_log import PredictionLog
     from models.wallet import Wallet
 
 
@@ -26,14 +28,19 @@ class User(SQLModel, table=True):
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    predictions: List["PredictionLog"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
     def set_password(self, raw_password: str):
         self._validate_password(raw_password)
-        self.password = sha256(raw_password.encode()).hexdigest()
+        hashed = bcrypt.hashpw(raw_password.encode(), bcrypt.gensalt())
+        self.password = hashed.decode("utf-8")
 
     def check_password(self, raw_password: str) -> bool:
-        return sha256(raw_password.encode()).hexdigest() == self.password
+        return bcrypt.checkpw(raw_password.encode(), self.password.encode("utf-8"))
 
     def _validate_email(self):
         pattern = re.compile(r'^[\w\.-]+@[\w\.-]+\.\w+$')
