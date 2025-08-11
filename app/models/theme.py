@@ -17,6 +17,7 @@ class Theme(SQLModel, table=True):
     base_comic: str
     bonus_comics: List[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     tasks: List["TaskLog"] = Relationship(back_populates="theme")
+    description: str | None = Field(default=None, description="Описание темы")
 
     def get_bonus_comic(self) -> Optional[str]:
         """Возвращает доступный бонусный комикс или None."""

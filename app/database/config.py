@@ -1,49 +1,39 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
-from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    # Database settings
-    DB_HOST: Optional[str] = "localhost"
-    DB_PORT: Optional[int] = 5432
-    DB_USER: Optional[str] = "postgres"
-    DB_PASS: Optional[str] = "postgres"
-    DB_NAME: Optional[str] = "spanola"
-    
-    # Application settings
-    APP_NAME: Optional[str] = "My App"
+    # --- Database (всегда валидные дефолты) ---
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    DB_USER: str = "postgres"
+    DB_PASS: str = "postgres"
+    DB_NAME: str = "spanola"
+
+    APP_NAME: str = "Spanola App"
+    APP_DESCRIPTION: str = "API for managing Spanola data"
+    API_VERSION: str = "1.0"
     DEBUG: bool = True
-    API_VERSION: Optional[str] = "1.0"
-    
+
+    USE_ASYNC: bool = False  # True → asyncpg, False → psycopg
+
     @property
-    def DATABASE_URL_asyncpg(self):
-        return f'postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}'
-    
-    @property
-    def DATABASE_URL_psycopg(self):
-        return f'postgresql+psycopg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}'
-    
+    def DATABASE_URL(self) -> str:
+        if self.USE_ASYNC:
+            return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        return f"postgresql+psycopg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
-        extra="allow"
+        extra="allow",
     )
-    
-    def validate(self) -> None:
-        required = {
-            "DB_HOST": self.DB_HOST,
-            "DB_USER": self.DB_USER,
-            "DB_PASS": self.DB_PASS,
-            "DB_NAME": self.DB_NAME,
-        }
-        missing = [key for key, value in required.items() if not value]
-        if missing:
-            raise ValueError(f"Отсутствуют обязательные параметры конфигурации БД: {', '.join(missing)}")
 
+    # Мягкая «валидация»: не падаем, а возвращаем список полей, взятых из дефолтов
+    def defaults_used(self) -> list[str]:
+        provided = getattr(self, "__pydantic_fields_set__", set())
+        return [name for name in self.model_fields.keys() if name not in provided]
 
 @lru_cache()
 def get_settings() -> Settings:
-    settings = Settings()
-    settings.validate()
-    return settings
+    return Settings()

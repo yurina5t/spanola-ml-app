@@ -21,6 +21,7 @@ class TaskResult(SQLModel, table=True):
     """
     id: Optional[int] = Field(default=None, primary_key=True)
     task_log_id: int = Field(foreign_key="tasklog.id", unique=True)
+    task_log: "TaskLog" = Relationship(back_populates="result")
 
     difficulty: DifficultyEnum = Field(
         sa_type=SqlEnum(DifficultyEnum), 
@@ -45,7 +46,14 @@ class TaskLog(SQLModel, table=True):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     user: Optional["User"] = Relationship(back_populates="completed_tasks")
-    result: Optional["TaskResult"] = Relationship(back_populates="task_log")
+    result: Optional["TaskResult"] = Relationship(
+        back_populates="task_log",
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan", 
+            "uselist": False,
+           # "single_parent": True,
+            }
+        )
     theme_id: Optional[int] = Field(foreign_key="theme.id")
     theme: Optional["Theme"] = Relationship(back_populates="tasks")
 

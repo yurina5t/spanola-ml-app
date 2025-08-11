@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 from models.wallet import Wallet
-from models.transaction_log import TransactionLog
+from models.transaction_log import OperationType
+from services.crud.transaction_log import log_transaction
 from typing import Optional
 from datetime import datetime, timezone
 
@@ -32,7 +33,15 @@ def top_up_wallet(user_id: int, amount: float, session: Session) -> Wallet:
 
     wallet.add(amount)
     session.add(wallet)
-    session.commit()
+    # создаём лог внутри той же транзакции
+    log_transaction(
+        user_id=user_id,
+        amount=amount,
+        operation=OperationType.credit.value,
+        reason="Пополнение баланса",
+        session=session,
+    )
+    session.commit() # единый коммит для баланса и лога
     session.refresh(wallet)
     return wallet
 
@@ -54,16 +63,38 @@ def deduct_from_wallet(user_id: int, amount: float, session: Session) -> bool:
 
     if not wallet.deduct(amount):
         raise ValueError("Недостаточно баллов")
-    
-    # Лог транзакции
-    log = TransactionLog(
+        
+    session.add(wallet)
+    log_transaction(
         user_id=user_id,
         amount=amount,
-        operation="debit",
+        operation=OperationType.debit.value,
         reason="Списание за бонусный комикс",
-        timestamp=datetime.now(timezone.utc)
+        session=session,
     )
-    
-    session.add_all([wallet, log])
     session.commit()
     return True
+
+def deduct_for_reason_no_commit(user_id: int, amount: float, reason: str, session: Session) -> None:
+    """
+    Списать баллы БЕЗ commit(). Делает:
+      - проверку кошелька и баланса
+      - уменьшает баланс
+      - пишет лог транзакции (debit) через log_transaction()
+    Коммит выполняет вызывающая сторона.
+    """
+    wallet = get_wallet_by_user_id(user_id, session)
+    if not wallet:
+        raise ValueError("Кошелёк не найден")
+
+    if not wallet.deduct(amount):
+        raise ValueError("Недостаточно баллов")
+
+    session.add(wallet)
+    log_transaction(
+        user_id=user_id,
+        amount=amount,
+        operation=OperationType.debit.value,  # "debit"
+        reason=reason,
+        session=session,
+    )

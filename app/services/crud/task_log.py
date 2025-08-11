@@ -16,6 +16,7 @@ def log_task(
 ) -> TaskLog:
     """
     Сохранить лог выполнения задания + результат.
+    Теперь вызывающая сторона отвечает за commit().
     """
     # 1. Создаём TaskLog
     log = TaskLog(
@@ -25,20 +26,20 @@ def log_task(
         credits_spent=credits_spent
     )
     session.add(log)
-    session.commit()  # чтобы log.id стал доступен
-    session.refresh(log)
 
     # 2. Создаём TaskResult и привязываем к TaskLog
     result = TaskResult(
-        task_log_id=log.id,
+        #task_log_id=log.id, заполним после flush(), чтобы id уже был
         difficulty=difficulty,
         vocabulary=vocabulary,
         explanation=explanation,
         is_correct=is_correct
     )
+    # сначала обеспечим появление log.id
+    session.flush()
+    result.task_log_id = log.id
+
     session.add(result)
-    session.commit()
-    session.refresh(result)
 
     # 3. Привязываем к объекту и возвращаем
     log.result = result

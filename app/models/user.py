@@ -18,7 +18,10 @@ class User(SQLModel, table=True):
     password: str= Field(..., min_length=8)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     is_admin: bool = Field(default=False)
-    wallet: Optional["Wallet"] = Relationship(back_populates="user")
+    
+    wallet: Optional["Wallet"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"})
 
     completed_tasks: List["TaskLog"] = Relationship(
         back_populates="user",
@@ -31,7 +34,7 @@ class User(SQLModel, table=True):
     predictions: List["PredictionLog"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
+    )    
 
 
     def set_password(self, raw_password: str):

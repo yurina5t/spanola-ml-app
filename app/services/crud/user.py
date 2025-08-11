@@ -9,7 +9,7 @@ def get_all_users(session: Session) -> List[User]:
             select(User)
             .options(
                 selectinload(User.wallet),
-                selectinload(User.completed_tasks)#.selectinload(TaskLog.theme)
+                selectinload(User.completed_tasks)
             )
         )
         return session.exec(statement).all()

@@ -10,13 +10,6 @@ from services.crud.wallet import create_wallet_for_user
 from services.admin import top_up_user, get_transaction_history_for_user
 from services.generation.task_request import TaskRequest
 from services.generation.grammar import GrammarModel
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
 
 
 if __name__ == "__main__":

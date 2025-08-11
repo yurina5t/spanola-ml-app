@@ -23,8 +23,7 @@ def log_transaction(user_id: int, amount: float, operation: str, reason: str, se
         reason=reason
     )
     session.add(log)
-    session.commit()
-    session.refresh(log)
+    # убираем commit и refresh, теперь это делает вызывающая функция
     return log
 
 def get_transactions_by_user(user_id: int, session: Session) -> List[TransactionLog]:

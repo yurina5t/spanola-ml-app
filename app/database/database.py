@@ -1,5 +1,5 @@
+import logging
 from sqlmodel import SQLModel, Session, create_engine 
-from contextlib import contextmanager
 from .config import get_settings
 
 from models.transaction_log import TransactionLog
@@ -9,10 +9,17 @@ from models.wallet import Wallet
 from models.user import User
 from models.theme import Theme
 
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
 def get_database_engine():
-    settings = get_settings()
+    # предупредим, если используем дефолты
+    defaults = settings.defaults_used()
+    if defaults:
+        logger.warning("Settings: используются значения по умолчанию для: %s", ", ".join(defaults))
+
     engine = create_engine(
-        url=settings.DATABASE_URL_psycopg,
+        settings.DATABASE_URL,
         echo=settings.DEBUG,
         pool_size=5,
         max_overflow=10,
@@ -23,7 +30,7 @@ def get_database_engine():
 
 engine = get_database_engine()
 
-@contextmanager
+
 def get_session():
     with Session(engine) as session:
         yield session
