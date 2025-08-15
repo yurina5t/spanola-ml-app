@@ -1,13 +1,12 @@
 from workers.worker_base import start_worker
-from services.generation.vocab import VocabModel  # сделай простую заглушку по аналогии
-from models.theme import Theme
+from services.generation.vocabulary import VocabularyModel
 from sqlmodel import Session
 
 def handle_job(job, session: Session):
     theme = session.get(Theme, job.theme_id)
     if not theme:
         raise ValueError("Тема не найдена")
-    model = VocabModel()
+    model = VocabularyModel()
     task_result = model.generate_task(theme, is_bonus=False)
     return {
         "model_name": model.name,

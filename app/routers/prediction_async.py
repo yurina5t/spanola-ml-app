@@ -6,7 +6,7 @@ from dependencies.auth import get_current_user, TokenData
 from dependencies.authz import self_or_admin
 from services.crud.job import create_job, get_job, list_jobs_by_user
 from schemas.job import JobCreate, JobOut, JobStatusOut
-from queue.publisher import publish_task
+from mq.publisher import publish_task
 from services.crud.wallet import deduct_from_wallet
 
 predict_async_route = APIRouter(prefix="/predictions", tags=["predictions-async"])
