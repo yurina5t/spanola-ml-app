@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, status
 from sqlmodel import Session, select
-from typing import List
+from typing import List, Literal
 import logging
 
 from database.database import get_session
@@ -14,7 +14,11 @@ from services.crud.task_log import log_task
 from services.crud.wallet import deduct_from_wallet, top_up_wallet
 from services.generation.spanish_comic import SpanishComicModel
 from services.crud.prediction_log import log_prediction, get_predictions_by_user
-from schemas.prediction import PredictRequest, PredictResponse, PredictionHistoryItem
+from schemas.prediction import (
+    PredictRequest, 
+    PredictResponse, 
+    PredictionHistoryItem, 
+)
 
 logger = logging.getLogger(__name__)
 predict_route = APIRouter(prefix="/predictions", tags=["predictions"])

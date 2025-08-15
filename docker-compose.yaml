@@ -49,6 +49,63 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - spanola-network
+      
+  worker-comic:
+    image: spanola:latest
+    container_name: spanola-worker-comic
+    restart: unless-stopped
+    env_file:
+      - ./app/.env
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    command: ["python", "-m", "workers.worker_comic"]
+    volumes:
+      - ./app:/app
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      database:
+        condition: service_healthy
+    networks:
+      - spanola-network
+
+  worker-grammar:
+    image: spanola:latest
+    container_name: spanola-worker-grammar
+    restart: unless-stopped
+    env_file:
+      - ./app/.env
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    command: ["python", "-m", "workers.worker_grammar"]
+    volumes:
+      - ./app:/app
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      database:
+        condition: service_healthy
+    networks:
+      - spanola-network
+
+  worker-vocab:
+    image: spanola:latest
+    container_name: spanola-worker-vocab
+    restart: unless-stopped
+    env_file:
+      - ./app/.env
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    command: ["python", "-m", "workers.worker_vocab"]
+    volumes:
+      - ./app:/app
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      database:
+        condition: service_healthy
+    networks:
+      - spanola-network
 
   database:
     image: postgres:latest
