@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from database.database import get_session
 from services.crud import user as UserService
 from services.crud.wallet import create_wallet_for_user
-from schemas.user import UserCreate, UserLogin, UserResponse
+from schemas.user import UserCreate, UserLogin, UserResponse, SignupOut
 from schemas.auth import Token
 from schemas.common import ActionMessage
 from core.security import create_access_token
@@ -21,12 +21,12 @@ user_route = APIRouter(prefix="/users", tags=["users"])
 
 @user_route.post(
     '/signup',
-    response_model=Dict[str, str],
+    response_model=SignupOut,
     status_code=status.HTTP_201_CREATED,
     summary="Регистрация пользователя",
     description="Создание нового пользователя + автоматическое создание кошелька"
 )
-async def signup(data: UserCreate, session: Session = Depends(get_session)) -> Dict[str, str]:
+async def signup(data: UserCreate, session: Session = Depends(get_session)) -> SignupOut:
     """
     Регистрация:
     1) Проверяем уникальность email.
@@ -50,7 +50,10 @@ async def signup(data: UserCreate, session: Session = Depends(get_session)) -> D
         create_wallet_for_user(user.id, session)
         logger.info("Кошелёк создан для пользователя: %s (id=%s)", data.email, user.id)
 
-        return {"message": "Пользователь успешно зарегистрирован и кошелёк создан", "user_id": user.id}
+        return SignupOut(
+        message="Пользователь успешно зарегистрирован и кошелёк создан",
+        user_id=user.id,
+    )
 
     except IntegrityError:
         session.rollback()

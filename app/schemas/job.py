@@ -9,6 +9,7 @@ class JobCreate(BaseModel):
     user_id: int = Field(..., description="ID пользователя")
     theme_id: int = Field(..., description="ID темы")
     model_type: ModelType = Field(..., description="Тип модели: comic|grammar|vocab")
+    is_bonus: bool = False
 
 class JobOut(BaseModel):
     id: int

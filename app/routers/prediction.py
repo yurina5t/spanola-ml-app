@@ -31,7 +31,7 @@ COST_PER_PREDICT = 1.0  # базовая стоимость запроса
     response_model=PredictResponse,
     status_code=status.HTTP_200_OK,
     summary="Сделать предсказание (сгенерировать задание)",
-    description="Списывает кредиты, генерирует задание и пишет логи",
+    description="енерация бесплатна; списание кредитов только если is_bonus=true",
 )
 def predict(
     req: PredictRequest, 
@@ -64,21 +64,28 @@ def predict(
         raise HTTPException(status_code=404, detail="Тема не найдена")
 
 
-    # 2) Списываем кредиты через CRUD, он сам проверит достаточно ли средств
-    try:
-        deduct_from_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
-        logger.info("Списаны кредиты за предсказание: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
-    except ValueError as e:
-        msg = str(e)
-        # маппинг: не найден -> 404, недостаточно -> 409, прочее -> 400
-        if "не найден" in msg.lower():
-            code = 404
-        elif "недостаточно" in msg.lower():
-            code = 409
-        else:
-            code = 400
-        logger.warning("Списание не удалось: user_id=%s, error=%s", user.id, msg)
-        raise HTTPException(status_code=code, detail=msg)
+    # 2) По умолчанию генерация бесплатна
+    credits_spent = 0.0
+    did_deduct = False
+
+    # Если это бонусный комикс — списываем COST_PER_PREDICT
+    if req.is_bonus:
+        try:
+            deduct_from_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
+            credits_spent = float(COST_PER_PREDICT)
+            did_deduct = True
+            logger.info("Списаны кредиты за БОНУС: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
+        except ValueError as e:
+            msg = str(e)
+            # маппинг: не найден -> 404, недостаточно -> 409, прочее -> 400
+            if "не найден" in msg.lower():
+                code = 404
+            elif "недостаточно" in msg.lower():
+                code = 409
+            else:
+                code = 400
+            logger.warning("Списание не удалось: user_id=%s, error=%s", user.id, msg)
+            raise HTTPException(status_code=code, detail=msg)
 
     # 3) Делаем предикт + логируем; при любой ошибке возвращаем средства
     model = SpanishComicModel()
@@ -99,7 +106,7 @@ def predict(
             user_id=user.id,
             task_description=task_result.explanation,
             model_name=model.name,
-            credits_spent=COST_PER_PREDICT,
+            credits_spent=credits_spent,
             difficulty=task_result.difficulty,
             vocabulary=task_result.vocabulary,
             explanation=task_result.explanation,
@@ -113,7 +120,7 @@ def predict(
             "Предсказание выполнено: user_id=%s, theme_id=%s, cost=%s", 
             user.id, 
             theme.id, 
-            COST_PER_PREDICT,
+            credits_spent,
         )
 
         return PredictResponse(
@@ -122,27 +129,29 @@ def predict(
             difficulty=task_result.difficulty,
             explanation=task_result.explanation,
             vocabulary=task_result.vocabulary,
-            credits_spent=COST_PER_PREDICT,
+            credits_spent=credits_spent,
             balance_after=wallet.balance,
         )
     
     except HTTPException:
         # Возврат средств и проброс исходной ошибки
-        try:
-            top_up_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
-            logger.info("Средства возвращены после ошибки предсказания: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
-        except Exception as re:
-            logger.error("Не удалось вернуть средства после ошибки предсказания: user_id=%s, err=%s", user.id, str(re))
-        raise
+        if did_deduct:
+            try:
+                top_up_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
+                logger.info("Средства возвращены после ошибки предсказания: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
+            except Exception as re:
+                logger.error("Не удалось вернуть средства после ошибки предсказания: user_id=%s, err=%s", user.id, str(re))
+            raise
     except Exception as e:
         # Любая другая ошибка: возврат средств + ошибка 500
-        try:
-            top_up_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
-            logger.info("Средства возвращены после ошибки предсказания: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
-        except Exception as re:
-            logger.error("Не удалось вернуть средства после ошибки предсказания: user_id=%s, err=%s", user.id, str(re))
-        logger.exception("Ошибка предсказания: %s", str(e))
-        raise HTTPException(status_code=500, detail="Ошибка предсказания")
+        if did_deduct:
+            try:
+                top_up_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
+                logger.info("Средства возвращены после ошибки предсказания: user_id=%s, amount=%s", user.id, COST_PER_PREDICT)
+            except Exception as re:
+                logger.error("Не удалось вернуть средства после ошибки предсказания: user_id=%s, err=%s", user.id, str(re))
+            logger.exception("Ошибка предсказания: %s", str(e))
+            raise HTTPException(status_code=500, detail="Ошибка предсказания")
 
 
 @predict_route.get(

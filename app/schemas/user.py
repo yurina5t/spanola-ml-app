@@ -23,3 +23,7 @@ class UserResponse(BaseModel):
     is_admin: bool = Field(..., description="Признак администратора")
 
     model_config = ConfigDict(from_attributes=True)
+
+class SignupOut(BaseModel):
+    message: str
+    user_id: int

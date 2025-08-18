@@ -17,7 +17,8 @@ COST_PER_PREDICT = 1.0
     "/async",
     response_model=JobOut,
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Создать асинхронную ML-задачу"
+    summary="Создать асинхронную ML-задачу",
+    description="Генерация бесплатна; списание кредитов — только если is_bonus=true",
 )
 def create_async_job(
     data: JobCreate,
@@ -28,8 +29,9 @@ def create_async_job(
     if not (token.is_admin or token.user_id == data.user_id):
         raise HTTPException(status_code=403, detail="Можно запускать задачи только для себя")
 
-    # списываем 1 кредит (если недостаточно — поднимет ValueError -> 409)
-    deduct_from_wallet(user_id=data.user_id, amount=COST_PER_PREDICT, session=session)
+    # списываем кредит если бонус (если недостаточно — поднимет ValueError -> 409)
+    if data.is_bonus:
+        deduct_from_wallet(user_id=data.user_id, amount=COST_PER_PREDICT, session=session)
 
     # создаём запись и публикуем сообщение
     job = create_job(user_id=data.user_id, theme_id=data.theme_id, model_type=data.model_type, session=session)
