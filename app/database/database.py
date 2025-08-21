@@ -1,5 +1,7 @@
 import logging
-from sqlmodel import SQLModel, Session, create_engine 
+import os
+from sqlmodel import SQLModel, Session, create_engine
+from sqlalchemy.pool import StaticPool
 from .config import get_settings
 
 from models.transaction_log import TransactionLog
@@ -13,11 +15,20 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 def get_database_engine():
+    # Тестовый режим → SQLite in-memory с StaticPool
+    if getattr(settings, "TESTING", False) or os.getenv("TESTING") == "1":
+        return create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
     # предупредим, если используем дефолты
     defaults = settings.defaults_used()
     if defaults:
-        logger.warning("Settings: используются значения по умолчанию для: %s", ", ".join(defaults))
-
+        logger.warning(
+            "Settings: используются значения по умолчанию для: %s",
+            ", ".join(defaults)
+        )
     engine = create_engine(
         settings.DATABASE_URL,
         echo=settings.DEBUG,

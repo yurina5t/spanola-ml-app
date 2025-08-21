@@ -15,13 +15,30 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     USE_ASYNC: bool = False  # True → asyncpg, False → psycopg
+    TESTING: bool = False    # форсим SQLite в тестах
+
+    # --- JWT / Security ---
+    SECRET_KEY: str = "dev-secret"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    # --- MQ ---
+    RABBITMQ_URL: str = "amqp://guest:guest@localhost:5672/"
 
     @property
     def DATABASE_URL(self) -> str:
+        if self.TESTING:
+            # заглушка; реальный engine выберем в database.py
+            return "sqlite://"
         if self.USE_ASYNC:
-            return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-        return f"postgresql+psycopg://{self.DB_USER}:{self.DB_PASS}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
-
+            return (
+                f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASS}"
+                f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+            )
+        return (
+            f"postgresql+psycopg://{self.DB_USER}:{self.DB_PASS}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

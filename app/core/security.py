@@ -11,7 +11,7 @@ settings = get_settings()
 
 SECRET_KEY: str = settings.SECRET_KEY
 ALGORITHM: str = settings.JWT_ALGORITHM
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+ACCESS_TOKEN_EXPIRE_MINUTES: int = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 def create_access_token(payload: Dict[str, Any]) -> Tuple[str, int, datetime]:
