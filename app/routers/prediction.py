@@ -14,10 +14,12 @@ from services.crud.task_log import log_task
 from services.crud.wallet import deduct_from_wallet, top_up_wallet
 from services.generation.spanish_comic import SpanishComicModel
 from services.crud.prediction_log import log_prediction, get_predictions_by_user
+from services.llm.ollama_client import generate_exercises, enabled as ollama_enabled
 from schemas.prediction import (
     PredictRequest, 
     PredictResponse, 
     PredictionHistoryItem, 
+    PanelRequest, PanelResponse, ExerciseItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -174,3 +176,103 @@ def prediction_history(
     rows = sorted(rows, key=lambda r: r.recommended_at, reverse=True)[:limit]
     logger.info("История предсказаний: user_id=%s, rows=%s", user_id, len(rows))
     return [PredictionHistoryItem.model_validate(r) for r in rows]
+
+@predict_route.post(
+    "/panel",
+    response_model=PanelResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Тестовая панель упражнений (15 заданий)",
+    description="Бесплатно генерирует 15 заданий по теме. Если is_bonus=true — списывает 1 кредит и добавляет бонус-задачу.",
+)
+def generate_panel(
+    req: PanelRequest,
+    session: Session = Depends(get_session),
+    token: TokenData = Depends(get_current_user),
+) -> PanelResponse:
+    # доступ: только сам пользователь или админ
+    if not (token.is_admin or token.user_id == req.user_id):
+        raise HTTPException(status_code=403, detail="Можно генерировать панель только для себя")
+
+    # проверим наличие пользователя, кошелька и темы
+    user = session.get(User, req.user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    wallet = session.exec(select(Wallet).where(Wallet.user_id == user.id)).first()
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Кошелёк не найден")
+
+    theme = session.get(Theme, req.theme_id)
+    if not theme:
+        raise HTTPException(status_code=404, detail="Тема не найдена")
+
+    # если хотят бонус — списываем 1 кредит
+    credits_spent = 0.0
+    if req.is_bonus:
+        try:
+            deduct_from_wallet(user_id=user.id, amount=COST_PER_PREDICT, session=session)
+            credits_spent = float(COST_PER_PREDICT)
+        except ValueError as e:
+            msg = str(e)
+            if "не найден" in msg.lower():
+                code = 404
+            elif "недостаточно" in msg.lower():
+                code = 409
+            else:
+                code = 400
+            raise HTTPException(status_code=code, detail=msg)
+
+    # 1) Сколько задач хотим
+    count = max(1, int(req.count or 15))
+    
+    # 2) Пробуем спросить Ollama (передаём и описание темы)
+    ex_list = generate_exercises(
+        theme_name=theme.name,
+        count=count,
+        level=theme.level,
+        theme_desc=getattr(theme, "description", None),
+) if ollama_enabled() else None
+    
+    # 3) Собираем список упражнений
+    exercises: list[ExerciseItem] = []
+    if ex_list:
+        for it in ex_list[:count]:
+            exercises.append(ExerciseItem(
+                prompt=it["prompt"],
+                choices=[str(c) for c in it.get("choices", [])][:4],
+                answer=str(it.get("answer") or ""),
+                is_bonus=False,
+            ))
+    
+    # 4) Фолбэк + добивка до нужного количества (если Ollama вернула мало)
+    def _fallback_item(i: int) -> ExerciseItem: 
+        return ExerciseItem(
+            prompt=f"[{theme.level}] {theme.name}: заполните пропуск #{i}",
+            choices=["ser", "estar", "soy", "estoy"],
+            answer=None,
+            is_bonus=False,
+        )
+    while len(exercises) < count:
+        exercises.append(_fallback_item(len(exercises) + 1))
+
+    # 5) Бонусное задание (если просили и кредит списался выше)
+    bonus_included = False
+    if req.is_bonus:
+        bonus_included = True
+        exercises.append(ExerciseItem(
+            prompt=f"[BONUS] {theme.name}: придумайте 3 примера с 'ser' и 'estar'",
+            choices=[],
+            answer=None,
+            is_bonus=True,
+        ))
+
+    # 6) Обновляем баланс
+    session.refresh(wallet)
+    return PanelResponse(
+        theme_name=theme.name,
+        count=len(exercises),
+        exercises=exercises,
+        bonus_included=bonus_included,
+        credits_spent=credits_spent,
+        balance_after=wallet.balance,
+    )

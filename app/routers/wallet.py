@@ -133,7 +133,7 @@ def spend_on_bonus(
         logger.info("Списание (бонус): user_id=%s, amount=%s", data.user_id, data.amount)
         return {"message": "Бонус успешно куплен, баллы списаны"}
     except ValueError as e:
-        session.rollback()
+        #session.rollback()
         msg = str(e)
         if "не найден" in msg.lower():
             code = 404

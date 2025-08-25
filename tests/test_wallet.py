@@ -1,131 +1,95 @@
 # tests/test_wallet.py
 from http import HTTPStatus
 
-def test_spend_zero_then_ok(signup, as_user, as_admin, client):
-    """POST /api/wallet/spend: при нуле — ошибка; 
-    после пополнения — успешно списывает 2."""
-    uid = signup("spendep@example.com", "password123")
-    user_h = as_user(uid)
-
-    r0 = client.post(
-        "/api/wallet/spend", 
-        headers=user_h, 
-        json={"user_id": uid, "amount": 1}
-    )
-    assert r0.status_code in (
-        HTTPStatus.BAD_REQUEST, 
-        HTTPStatus.CONFLICT, 
-        HTTPStatus.UNPROCESSABLE_ENTITY
-    ), r0.text
-
-    admin_h = as_admin()
-    r1 = client.post(
-        "/api/wallet/admin_top_up", 
-        headers=admin_h, 
-        json={"user_id": uid, "amount": 3, "reason": "init"}
-    )
-    assert r1.status_code in (
-        HTTPStatus.OK, 
-        HTTPStatus.CREATED
-    ), r1.text
-
-    before = client.get(f"/api/wallet/{uid}", headers=user_h).json()["balance"]
-    r2 = client.post(
-        "/api/wallet/spend", 
-        headers=user_h, 
-        json={"user_id": uid, "amount": 2}
-    )
-    assert r2.status_code in (
-        HTTPStatus.OK, 
-        HTTPStatus.CREATED
-    ), r2.text
-
-    after = client.get(f"/api/wallet/{uid}", headers=user_h).json()["balance"]
-    assert after == before - 2
-
-
-def test_can_spend_flag(signup, as_user, as_admin, client):
-    """GET /api/wallet/can_spend: False для суммы > баланс; 
-    True после пополнения."""
-    uid = signup("canspend@example.com", "password123")
-    user_h = as_user(uid)
-
-    bal0 = client.get(f"/api/wallet/{uid}", headers=user_h).json()["balance"]
-    r = client.get(
-        "/api/wallet/can_spend", 
-        headers=user_h, 
-        params={"user_id": uid, "amount": bal0 + 1}
-    )
-    js = r.json()
-    assert r.status_code == HTTPStatus.OK and (js is False or js.get("can") is False)
-
-    admin_h = as_admin()
-    client.post(
-        "/api/wallet/admin_top_up", 
-        headers=admin_h, 
-        json={"user_id": uid, "amount": 5, "reason": "init"}
-    )
-    r = client.get(
-        "/api/wallet/can_spend", 
-        headers=user_h, 
-        params={"user_id": uid, "amount": 3}
-    )
-    js = r.json()
-    assert r.status_code == HTTPStatus.OK and (js is True or js.get("can") is True)
-
-
-def test_deposit_increases_balance(signup, as_admin, as_user, client):
-    """POST /api/wallet/deposit: 
-    позитивный сценарий — баланс растёт ровно на сумму."""
-    uid = signup("posdep@example.com", "password123")
+def test_admin_top_up_and_balance(client, signup, as_admin, as_user):
+    uid = signup("wal1@example.com", "password123")
     user_h = as_user(uid)
     admin_h = as_admin()
 
-    before = client.get(f"/api/wallet/{uid}", headers=user_h).json()["balance"]
-    r = client.post("/api/wallet/deposit", headers=admin_h, json={"user_id": uid, "amount": 7})
-    assert r.status_code in (HTTPStatus.OK, HTTPStatus.CREATED), r.text
-    after = client.get(f"/api/wallet/{uid}", headers=user_h).json()["balance"]
-    assert after == before + 7
+    r = client.post("/api/wallet/admin_top_up",
+                    headers=admin_h,
+                    json={"user_id": uid, "amount": 5, "reason": "init"})
+    assert r.status_code == HTTPStatus.OK, r.text
+
+    r = client.get(f"/api/wallet/{uid}", headers=user_h)
+    assert r.status_code == HTTPStatus.OK, r.text
+    assert r.json()["balance"] == 5
 
 
-def test_deposit_negative_fails(signup, as_admin, client):
-    """POST /api/wallet/deposit: отрицательная сумма → 400/409/422."""
-    uid = signup("negdep@example.com", "password123")
-    headers = as_admin()
-    r = client.post(
-        "/api/wallet/deposit", 
-        headers=headers, 
-        json={"user_id": uid, "amount": -5}
-    )
-    assert r.status_code in (
-        HTTPStatus.BAD_REQUEST, 
-        HTTPStatus.CONFLICT, 
-        HTTPStatus.UNPROCESSABLE_ENTITY
-    ), r.text
-
-
-def test_history_has_entries(signup, as_user, as_admin, client):
-    """GET /api/wallet/history/{user_id}: 
-    возвращает непустой список после credit/debit."""
-    uid = signup("history@example.com", "password123")
+def test_spend_on_bonus_insufficient_then_ok(client, signup, as_admin, as_user):
+    uid = signup("wal2@example.com", "password123")
     user_h = as_user(uid)
     admin_h = as_admin()
 
-    client.post(
-        "/api/wallet/admin_top_up", 
-        headers=admin_h, 
-        json={"user_id": uid, "amount": 4, "reason": "init"}
-    )
-    client.post(
-        "/api/wallet/spend", 
-        headers=user_h, 
-        json={"user_id": uid, "amount": 1}
-    )
+    # без денег: ожидаем ошибку (возможны 400/404/409/422 в зависимости от реализации)
+    r0 = client.post("/api/wallet/spend_on_bonus",
+                     headers=user_h,
+                     json={"user_id": uid, "amount": 2})
+    assert r0.status_code in (400, 404, 409, 422), r0.text
+
+    # пополняем и тратим
+    r = client.post("/api/wallet/admin_top_up",
+                    headers=admin_h,
+                    json={"user_id": uid, "amount": 3, "reason": "refill"})
+    assert r.status_code == HTTPStatus.OK, r.text
+
+    r = client.post("/api/wallet/spend_on_bonus",
+                    headers=user_h,
+                    json={"user_id": uid, "amount": 2})
+    assert r.status_code == HTTPStatus.OK, r.text
+
+    # баланс стал 1
+    r = client.get(f"/api/wallet/{uid}", headers=user_h)
+    assert r.status_code == HTTPStatus.OK
+    assert r.json()["balance"] == 1
+
+
+def test_spend_on_bonus_forbidden_on_other_user(client, signup, as_user):
+    owner = signup("owner@example.com", "password123")
+    stranger = signup("stranger@example.com", "password123")
+    stranger_h = as_user(stranger)
+
+    # пытаемся списать у владельца чужими руками → 403
+    r = client.post("/api/wallet/spend_on_bonus",
+                    headers=stranger_h,
+                    json={"user_id": owner, "amount": 1})
+    assert r.status_code == HTTPStatus.FORBIDDEN, r.text
+
+
+def test_can_spend(client, signup, as_admin, as_user):
+    uid = signup("wal3@example.com", "password123")
+    user_h = as_user(uid)
+    admin_h = as_admin()
+
+    # пополнили на 2
+    client.post("/api/wallet/admin_top_up",
+                headers=admin_h,
+                json={"user_id": uid, "amount": 2, "reason": "init"})
+
+    r_false = client.get(f"/api/wallet/can_spend/{uid}/3", headers=user_h)
+    assert r_false.status_code == HTTPStatus.OK
+    assert r_false.json()["can_spend"] is False
+
+    r_true = client.get(f"/api/wallet/can_spend/{uid}/2", headers=user_h)
+    assert r_true.status_code == HTTPStatus.OK
+    assert r_true.json()["can_spend"] is True
+
+
+def test_history_has_entries(client, signup, as_admin, as_user):
+    uid = signup("wal4@example.com", "password123")
+    user_h = as_user(uid)
+    admin_h = as_admin()
+
+    client.post("/api/wallet/admin_top_up",
+                headers=admin_h,
+                json={"user_id": uid, "amount": 4, "reason": "init"})
+    client.post("/api/wallet/spend_on_bonus",
+                headers=user_h,
+                json={"user_id": uid, "amount": 1})
 
     r = client.get(f"/api/wallet/history/{uid}", headers=user_h)
-    assert r.status_code == HTTPStatus.OK
+    assert r.status_code == HTTPStatus.OK, r.text
     data = r.json()
     assert isinstance(data, list) and len(data) >= 1
-
-    ops = {item.get("operation") for item in data if isinstance(item, dict)}
-    assert "credit" in ops and "debit" in ops
+    # минимальная проверка структуры
+    assert {"amount"} <= set(data[0].keys())

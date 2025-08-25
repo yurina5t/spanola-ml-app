@@ -48,6 +48,7 @@ def test_async_job_charges_and_publishes(
 
     patched = False
     for dotted in (
+        "routers.prediction_async.publish_task",
         "app.mq.publisher.publish_task",
         "app.services.mq.publisher.publish_task",
         "mq.publisher.publish_task",
@@ -67,6 +68,7 @@ def test_async_job_charges_and_publishes(
             "user_id": user_id,
             "theme_id": theme_id,
             "model_type": "comic",
+            "is_bonus": True, 
         },
     )
     assert r.status_code in (HTTPStatus.ACCEPTED, HTTPStatus.OK), r.text

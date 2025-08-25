@@ -57,6 +57,9 @@ export const endpoints = {
   predictSync:        () => '/predictions/',      // POST
   predictionHistory:  (userId) => `/predictions/history/${userId}`,
 
+  // endpoints
+  panel: () => '/predictions/panel',
+
    // tasks
   taskHistory:  (userId) => `/tasks/history/${userId}`,
   taskById:     (taskId) => `/tasks/${taskId}`,
@@ -142,5 +145,14 @@ export async function apiPredictSync({ userId, themeId, isBonus }) {
   } catch (e) { return { ok: false, error: (e.response?.data?.detail || e.message) }; }
 }
 
+// API-функция
+export async function apiGeneratePanel({ userId, themeId, count = 15, isBonus = false }) {
+  try {
+    const { data } = await api.post(endpoints.panel(), {
+      user_id: userId, theme_id: themeId, count, is_bonus: !!isBonus
+    });
+    return { ok: true, data };
+  } catch (e) { return { ok: false, error: (e.response?.data?.detail || e.message) }; }
+}
 
 export default api

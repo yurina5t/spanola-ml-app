@@ -50,6 +50,8 @@ async def signup(data: UserCreate, session: Session = Depends(get_session)) -> S
         create_wallet_for_user(user.id, session)
         logger.info("Кошелёк создан для пользователя: %s (id=%s)", data.email, user.id)
 
+        session.commit()
+
         return SignupOut(
         message="Пользователь успешно зарегистрирован и кошелёк создан",
         user_id=user.id,

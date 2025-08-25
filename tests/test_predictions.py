@@ -99,7 +99,7 @@ def test_predict_insufficient_balance(
     as_admin,
     client,
 ):
-    """POST /api/predictions/: недостаточно средств → 409/400."""
+    """POST /api/predictions/: для bonus при нулевом балансе → 409/400."""
     user_id = signup("poor@example.com", "password123")
     admin_h = as_admin()
 
@@ -121,7 +121,7 @@ def test_predict_insufficient_balance(
         json={
             "user_id": user_id,
             "theme_id": theme_id,
-            "is_bonus": False,
+            "is_bonus": True,  # бонус платный → при 0 балансе ждём 409/400
         },
     )
     assert r.status_code in (

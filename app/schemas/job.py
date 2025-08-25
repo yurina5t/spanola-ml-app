@@ -3,13 +3,13 @@ from datetime import datetime
 from typing import Any, Optional, Literal
 
 ModelType = Literal["comic", "grammar", "vocab"]
-JobStatus = Literal["pending", "processing", "done", "failed"]
+JobStatus = Literal["pending", "processing", "queued", "done", "failed"]
 
 class JobCreate(BaseModel):
     user_id: int = Field(..., description="ID пользователя")
     theme_id: int = Field(..., description="ID темы")
     model_type: ModelType = Field(..., description="Тип модели: comic|grammar|vocab")
-    is_bonus: bool = False
+    is_bonus: bool = Field(False, description="Списывать 1 кредит за бонусную задачу")
 
 class JobOut(BaseModel):
     id: int
@@ -18,7 +18,7 @@ class JobOut(BaseModel):
     model_type: ModelType
     status: JobStatus
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None
     result: Optional[Any] = None
     error: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
