@@ -7,12 +7,13 @@ logger = logging.getLogger(__name__)
 
 USE_OLLAMA = os.getenv("USE_OLLAMA", "0").lower() in {"1", "true", "yes"}
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://ollama:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b-instruct")
 REQUEST_TIMEOUT = float(os.getenv("OLLAMA_TIMEOUT", "20"))  # seconds
 TEMPERATURE = float(os.getenv("OLLAMA_TEMPERATURE", "0.3"))
 MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "800"))
 TOKENS_COMIC = int(os.getenv("OLLAMA_TOKENS_COMIC", "200"))
 TOKENS_PANEL = int(os.getenv("OLLAMA_TOKENS_PANEL", str(MAX_TOKENS)))
+TOKENS_PER_ITEM = int(os.getenv("OLLAMA_TOKENS_PER_ITEM", "150"))
 
 # Профили уровней (можешь дополнять)
 LEVEL_GUIDE = {
@@ -52,6 +53,14 @@ TASK_TYPES = [
 def enabled() -> bool:
     return USE_OLLAMA
 
+def _strip_code_fences(text: str) -> str:
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t.strip("` \n")
+        if t[:4].lower() == "json":
+            t = t[4:].lstrip()
+    return t
+
 def _build_prompt(theme_name: str, count: int, level: str, theme_desc: Optional[str]) -> str:
     guide = LEVEL_GUIDE.get(level.upper(), LEVEL_GUIDE["A1"])
     # 2-3 типа заданий на партию — для разнообразия
@@ -89,16 +98,32 @@ def _clean_and_validate(items: List[Dict[str, Any]], count: int) -> List[Dict[st
         if not isinstance(it, dict): 
             continue
         prompt = str(it.get("prompt") or "").strip()
-        choices = [str(c).strip() for c in (it.get("choices") or []) if str(c).strip()]
+        raw_choices = it.get("choices") or []
+        choices = [str(c).strip() for c in raw_choices if str(c).strip()]
         answer  = str(it.get("answer") or "").strip()
 
         if not prompt or not choices:
             continue
-        # Ровно 4 варианта
-        choices = choices[:4] if len(choices) >= 4 else (choices + ["—"] * (4 - len(choices)))
-        # Ответ должен входить в choices
-        if answer not in choices:
-            answer = choices[0]
+
+        # дедупликация вариантов с сохранением порядка
+        choices = list(dict.fromkeys(choices))
+
+        # если правильного ответа нет в вариантах — вставим его
+        if answer and answer not in choices:
+            if len(choices) < 4:
+                choices.append(answer)
+            else:
+                choices[-1] = answer
+
+        # ограничим/допаддим до ровно 4
+        if len(choices) > 4:
+            choices = choices[:4]
+            if answer and answer not in choices:
+                choices[-1] = answer
+        while len(choices) < 4:
+            choices.append("—")
+        # перетасуем, чтобы правильный не залипал на одной позиции
+        random.shuffle(choices)
 
         # Убираем дубли
         key = (prompt.lower(), tuple(c.lower() for c in choices))
@@ -106,23 +131,45 @@ def _clean_and_validate(items: List[Dict[str, Any]], count: int) -> List[Dict[st
             continue
         seen_prompts.add(key)
 
-        cleaned.append({"prompt": prompt, "choices": choices, "answer": answer})
+        answer_final = answer or next((c for c in choices if c != "—"), choices[0])
+        cleaned.append({"prompt": prompt, "choices": choices, "answer": answer_final})
 
-        if len(cleaned) >= count:
+        if len(cleaned) >= max(1, int(count)):
             break
     return cleaned
+
+def _coerce_to_list(parsed):
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        for key in ("items", "questions", "exercises", "data", "result"):
+            v = parsed.get(key)
+            if isinstance(v, list):
+                return v
+        vals = list(parsed.values())
+        if vals and all(isinstance(x, dict) for x in vals):
+            return vals
+        return [parsed]
+    return []
+
 
 def generate_exercises(
         theme_name: str, 
         count: int, 
         level: str, 
-        theme_desc: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
-    if not USE_OLLAMA:
+        theme_desc: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+    """
+    Запрашивает у Ollama массив JSON-объектов упражнений.
+    Возвращает уже «прибранный» список через _clean_and_validate(...) или None (для fallback).
+    """
+    if not enabled():
         logger.info("Ollama disabled via USE_OLLAMA; skipping call.")
         return None
 
     url = f"{OLLAMA_HOST}/api/generate"
     prompt = _build_prompt(theme_name, count, level, theme_desc)
+    num_predict = max(TOKENS_PANEL, TOKENS_PER_ITEM * max(1, int(count)))
 
     try:
         resp = requests.post(
@@ -130,7 +177,7 @@ def generate_exercises(
             json={
                 "model": OLLAMA_MODEL,
                 "prompt": prompt,
-                "options": {"temperature": TEMPERATURE, "num_predict": TOKENS_PANEL},
+                "options": {"temperature": TEMPERATURE, "num_predict": num_predict},
                 "stream": False,
                 "format": "json",
             },
@@ -142,13 +189,38 @@ def generate_exercises(
 
         data = resp.json()
         text = (data or {}).get("response", "").strip()
+        text = _strip_code_fences(text)
         if not text:
-            logger.warning("Ollama returned empty response field.")
+            logger.warning("Ollama returned empty response for panel.")
             return None
-
-        parsed = json.loads(text)
-        if not isinstance(parsed, list):
-            logger.warning("Ollama returned non-list JSON.")
+        
+        # Пробуем распарсить как есть; если не вышло — вырезаем первый '[' и последний ']'
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+            # 1) попробуем вырезать первый массив [...]
+            a1, a2 = text.find("["), text.rfind("]")
+            if a1 != -1 and a2 != -1 and a2 > a1:
+                try:
+                    parsed = json.loads(text[a1:a2 + 1])
+                except json.JSONDecodeError:
+                    parsed = None
+        # 2) если массива нет — попробуем объект {...}
+            if parsed is None:
+                o1, o2 = text.find("{"), text.rfind("}")
+                if o1 != -1 and o2 != -1 and o2 > o1:
+                    try:
+                        parsed = json.loads(text[o1:o2 + 1])
+                    except json.JSONDecodeError:
+                        parsed = None
+            if parsed is None:
+                logger.warning("Ollama panel JSON decode failed (no list/object could be parsed).")
+                return None
+        # нормализуем к списку объектов
+        parsed = _coerce_to_list(parsed)
+        if not parsed:
+            logger.warning("Ollama returned JSON but not an array/object list; fallback.")
             return None
 
         items = _clean_and_validate(parsed, count)
@@ -195,7 +267,7 @@ def generate_comic_task(theme_name: str, level: str, is_bonus: bool) -> Optional
     # две попытки: 1) обычная; 2) короче по токенам и холоднее по температуре
     attempts = [
         {"num_predict": TOKENS_COMIC,                   "temperature": TEMPERATURE, "timeout": REQUEST_TIMEOUT},
-        {"num_predict": max(120, TOKENS_COMIC // 2),   "temperature": 0.1,         "timeout": REQUEST_TIMEOUT * 2},
+        #{"num_predict": max(120, TOKENS_COMIC // 2),   "temperature": 0.1,         "timeout": REQUEST_TIMEOUT * 2},
     ]
 
     last_err = None
@@ -215,16 +287,21 @@ def generate_comic_task(theme_name: str, level: str, is_bonus: bool) -> Optional
                 continue
 
             text = (resp.json() or {}).get("response", "").strip()
+            text = _strip_code_fences(text)
             if not text:
                 logger.warning("Ollama returned empty response for comic task (attempt %s).", i)
                 last_err = "empty_response"
                 continue
 
-            data = json.loads(text)
-            if not isinstance(data, dict):
-                logger.warning("Comic JSON is not an object (attempt %s).", i)
-                last_err = "non_object_json"
-                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                start = text.find("{")
+                end = text.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    data = json.loads(text[start:end+1])
+                else:
+                    raise
 
             diff = str(data.get("difficulty", "easy")).lower()
             if diff not in {"easy", "medium", "hard"}:

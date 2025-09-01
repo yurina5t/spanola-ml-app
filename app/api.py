@@ -12,6 +12,7 @@ from routers.theme import theme_route
 from routers.task_log import tasklog_route
 from routers.task import task_route
 from routers.prediction_async import predict_async_route
+from routers import panel
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -45,6 +46,7 @@ def create_application() -> FastAPI:
     app.include_router(tasklog_route, prefix="/api")
     app.include_router(task_route,    prefix="/api")
     app.include_router(predict_async_route, prefix="/api")
+    app.include_router(panel.router, prefix="/api")
 
     # healthcheck для docker-compose
     @app.get("/health", tags=["meta"])

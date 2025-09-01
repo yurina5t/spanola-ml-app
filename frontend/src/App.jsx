@@ -5,6 +5,7 @@ import { decodeJwt } from './utils'
 import { 
   apiLogin, apiRegister, apiGetBalance, apiWalletHistory, apiGetThemes, apiPredictSync, apiListUsers, apiRefill, apiCreateTheme, apiDeleteTheme
 } from './api'
+import PanelBlock from '@/components/PanelBlock' 
 
 function Section({ title, children, actions }) {
   return (
@@ -202,6 +203,7 @@ function PredictPanel({ userId }) {
   }, [result, verbsOnly])
 
   return (
+    <>
     <Section title="Генерация задания (комикс)"
       actions={<button className="btn btn-primary" onClick={run} disabled={loading || !themeId}><Play size={16}/> {loading? 'Генерация…' : 'Сгенерировать'}</button>}
     >
@@ -246,6 +248,11 @@ function PredictPanel({ userId }) {
         </div>
       </div>
     </Section>
+     {/* НОВЫЙ БЛОК — панель тестов с вариантами ответов */}
+    <Section title="Тест с выбором ответа (панель)">
+      <PanelBlock />
+    </Section>
+  </>
   )
 }
 

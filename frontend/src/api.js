@@ -1,17 +1,15 @@
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
+const API_BASE = import.meta.env.VITE_API_BASE || '/api' //'http://localhost:8000'
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 15000,
+  timeout: 25000,
 })
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
-  if (token) {
-    config.headers['Authorization'] = `Bearer ${token}`
-  }
+  if (token) config.headers['Authorization'] = `Bearer ${token}`
   return config
 })
 
@@ -19,10 +17,8 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err?.response?.status === 401) {
-      // токен протух — чистим и отправляем на логин
       localStorage.removeItem('token')
-      // либо мягко «перерисовать»: window.location.reload()
-      window.location.href = '/'     // у тебя после очистки токена покажется форма логина
+      window.location.href = '/' 
     }
     return Promise.reject(err)
   }
@@ -57,8 +53,9 @@ export const endpoints = {
   predictSync:        () => '/predictions/',      // POST
   predictionHistory:  (userId) => `/predictions/history/${userId}`,
 
-  // endpoints
-  panel: () => '/predictions/panel',
+  // panel (новые бэкенд-роуты)
+  panelGenerate: () => '/panel/generate',
+  panelSubmit:   (exerciseId) => `/panel/${exerciseId}/submit`,
 
    // tasks
   taskHistory:  (userId) => `/tasks/history/${userId}`,
@@ -146,11 +143,17 @@ export async function apiPredictSync({ userId, themeId, isBonus }) {
 }
 
 // API-функция
-export async function apiGeneratePanel({ userId, themeId, count = 15, isBonus = false }) {
+export async function apiGeneratePanel({ themeId, count = 15, level = 'A1' }) {
   try {
-    const { data } = await api.post(endpoints.panel(), {
-      user_id: userId, theme_id: themeId, count, is_bonus: !!isBonus
-    });
+    const url = `${endpoints.panelGenerate()}?theme_id=${themeId}&count=${count}&level=${encodeURIComponent(level)}`
+    const { data } = await api.post(url, {}); // body не нужен
+    return { ok: true, data };
+  } catch (e) { return { ok: false, error: (e.response?.data?.detail || e.message) }; }
+}
+
+export async function apiSubmitPanel({ exerciseId, answers }) {
+  try {
+    const { data } = await api.post(endpoints.panelSubmit(exerciseId), { answers });
     return { ok: true, data };
   } catch (e) { return { ok: false, error: (e.response?.data?.detail || e.message) }; }
 }

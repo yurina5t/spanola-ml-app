@@ -9,6 +9,17 @@ from services.llm.ollama_client import (
     generate_comic_task,    
 )
 
+def _fallback_vocab_for(theme_name: str, level: str) -> list[str]:
+        t = theme_name.lower()
+        lvl = (level or "A1").upper()
+        if "ser" in t:
+            return ["ser","soy","eres","es"] if lvl=="A1" else ["ser","estar","es","está","somos"]
+        if "adjetiv" in t or "прилагатель" in t:
+            return ["grande","pequeño","bonito","feo"] if lvl=="A1" else ["más","menos","tan","como","mejor","peor"]
+        if any(k in t for k in ["pasado","pretérito","perfecto","indefinido"]):
+            return ["ayer","anoche","ya","todavía","nunca","siempre"]
+        return ["palabra","nueva"]
+
 class SpanishComicModel(MLModel):
     """
     Генератор задания-комикса.
@@ -19,30 +30,27 @@ class SpanishComicModel(MLModel):
         super().__init__(name="SpanishComicModel", cost=0.0)
 
     def generate_task(self, theme: Theme, is_bonus: bool = False) -> TaskResult:
-        # выбираем файл комикса как раньше
+        # 1. выбираем файл комикса как раньше
         comic_file = theme.get_bonus_comic() if is_bonus else theme.base_comic
+        if is_bonus and not comic_file:
+            comic_file = theme.base_comic 
         if not comic_file:
-            raise ValueError(
-                "Нет бонусных комиксов для этой темы" if is_bonus
-                else "Нет базового комикса для этой темы"
-            )
+            raise ValueError("Нет комикса для этой темы")
 
-        # 1) Попытка через Ollama
+        # 2. Попытка через Ollama
         if ollama_enabled():
             data = generate_comic_task(theme_name=theme.name, level=theme.level, is_bonus=is_bonus)
             if data:
-                explanation = f"{data['explanation']} (Комикс: {comic_file})"
+                vocab = data.get("vocabulary") or _fallback_vocab_for(theme.name, theme.level)
+                explanation = f"{data.get('explanation', '')} (Комикс: {comic_file})".strip()
                 return TaskResult(
-                    difficulty=data["difficulty"],
-                    vocabulary=(data.get("vocabulary") or ["ser", "soy", "eres", "es"]),
+                    difficulty=data.get("difficulty", "easy"),
+                    vocabulary=vocab,
                     explanation=explanation,
+                    is_correct=False,  # не начисляем на генерации
                 )
-
-        # 2) Фолбэк (как раньше)
+        # 3.Фолбэк (как раньше)
         diff = "easy"
-        vocab: List[str] = (
-            ["ser", "soy", "eres", "es"]
-            if theme.name.lower().strip() in {"глагол ser", "ser"} else ["palabra", "nueva"]
-        )
+        vocab = _fallback_vocab_for(theme.name, theme.level)
         explanation = f"[{diff}]. Комикс: {comic_file} | Тема: {theme.name} | Уровень: {theme.level}"
-        return TaskResult(difficulty=diff, vocabulary=vocab, explanation=explanation)
+        return TaskResult(difficulty=diff, vocabulary=vocab, explanation=explanation, is_correct=False)
