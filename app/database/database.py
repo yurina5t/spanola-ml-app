@@ -10,6 +10,8 @@ from models.prediction_log import PredictionLog
 from models.wallet import Wallet
 from models.user import User
 from models.theme import Theme
+from models.exercise import Exercise
+
 
 logger = logging.getLogger(__name__)
 settings = get_settings()

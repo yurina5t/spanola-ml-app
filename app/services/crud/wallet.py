@@ -3,7 +3,6 @@ from models.wallet import Wallet
 from models.transaction_log import OperationType
 from services.crud.transaction_log import log_transaction
 from typing import Optional
-from datetime import datetime, timezone
 
 def get_wallet_by_user_id(user_id: int, session: Session) -> Optional[Wallet]:
     """
@@ -27,6 +26,9 @@ def top_up_wallet(user_id: int, amount: float, session: Session) -> Wallet:
     """
     Пополнить кошелёк баллами (за задания, бонусы и т.п.).
     """
+    if amount <= 0:
+        raise ValueError("Сумма пополнения должна быть > 0")
+    
     wallet = get_wallet_by_user_id(user_id, session)
     if not wallet:
         raise ValueError("Кошелёк не найден")
@@ -45,6 +47,29 @@ def top_up_wallet(user_id: int, amount: float, session: Session) -> Wallet:
     session.refresh(wallet)
     return wallet
 
+def credit_for_reason_no_commit(user_id: int, amount: float, reason: str, session: Session) -> None:
+    """
+    Начислить баллы БЕЗ commit(). Делает:
+      - проверку кошелька и увеличение баланса
+      - пишет лог транзакции (credit) через log_transaction()
+    Коммит выполняет вызывающая сторона.
+    """
+    if amount <= 0:
+        raise ValueError("Сумма начисления должна быть > 0")
+    
+    wallet = get_wallet_by_user_id(user_id, session)
+    if not wallet:
+        raise ValueError("Кошелёк не найден")
+
+    wallet.add(amount)
+    session.add(wallet)
+    log_transaction(
+        user_id=user_id,
+        amount=amount,
+        operation=OperationType.credit.value,  # "credit"
+        reason=reason,
+        session=session,
+    )
 
 def admin_top_up_wallet(user_id: int, amount: float, session: Session) -> Wallet:
     """
@@ -57,6 +82,9 @@ def deduct_from_wallet(user_id: int, amount: float, session: Session) -> bool:
     """
     Списать баллы (например, за бонусный комикс).
     """
+    if amount <= 0:
+        raise ValueError("Сумма списания должна быть > 0")
+    
     wallet = get_wallet_by_user_id(user_id, session)
     if not wallet:
         raise ValueError("Кошелёк не найден")
@@ -83,6 +111,9 @@ def deduct_for_reason_no_commit(user_id: int, amount: float, reason: str, sessio
       - пишет лог транзакции (debit) через log_transaction()
     Коммит выполняет вызывающая сторона.
     """
+    if amount <= 0:
+        raise ValueError("Сумма списания должна быть > 0")
+    
     wallet = get_wallet_by_user_id(user_id, session)
     if not wallet:
         raise ValueError("Кошелёк не найден")
